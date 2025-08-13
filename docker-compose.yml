@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ls25
+      POSTGRES_USER: ls25user
+      POSTGRES_PASSWORD: ls25password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - main_proxy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./ls25-backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://ls25user:ls25password@postgres:5432/ls25
+    depends_on:
+      - postgres
+    networks:
+      - main_proxy
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./ls25-frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - main_proxy
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:
+
+networks:
+  main_proxy:
+    external: true
