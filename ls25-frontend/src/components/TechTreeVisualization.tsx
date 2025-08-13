@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Wheat, Factory, Cake, Cookie, Milk, ChefHat } from 'lucide-react';
 import { produktionenApi, warenApi, calculationApi, Produktion, Ware } from '@/lib/api';
 
 interface Node {
@@ -237,6 +238,24 @@ export function TechTreeVisualization() {
     }
   };
 
+  const getNodeIcon = (node: Node) => {
+    const iconProps = { size: 16, color: 'white' };
+    
+    if (node.type === 'good') {
+      switch (node.name.toLowerCase()) {
+        case 'weizen': return <Wheat {...iconProps} />;
+        case 'mehl': return <Cookie {...iconProps} />;
+        case 'brot': return <ChefHat {...iconProps} />;
+        case 'kuchen': return <Cake {...iconProps} />;
+        case 'nudeln': return <Cookie {...iconProps} />;
+        case 'milch': return <Milk {...iconProps} />;
+        default: return <Wheat {...iconProps} />;
+      }
+    } else {
+      return <Factory {...iconProps} />;
+    }
+  };
+
   const renderTooltip = (node: Node) => {
     if (!hoveredNode || hoveredNode.id !== node.id) return null;
 
@@ -388,11 +407,19 @@ export function TechTreeVisualization() {
                     opacity={hoveredNode?.id === node.id ? 0.9 : 1}
                   />
                 )}
+                <foreignObject
+                  x={node.x - 8}
+                  y={node.y - 12}
+                  width="16"
+                  height="16"
+                >
+                  {getNodeIcon(node)}
+                </foreignObject>
                 <text
                   x={node.x}
-                  y={node.y + 4}
+                  y={node.y + 8}
                   textAnchor="middle"
-                  fontSize="11"
+                  fontSize="10"
                   fill="white"
                   className="font-semibold"
                 >

@@ -16,6 +16,9 @@ class InMemoryDatabase {
     const weizenId = uuidv4();
     const mehlId = uuidv4();
     const brotId = uuidv4();
+    const kuchenId = uuidv4();
+    const nudelId = uuidv4();
+    const milchId = uuidv4();
 
     const weizen: Ware = {
       id: weizenId,
@@ -40,12 +43,39 @@ class InMemoryDatabase {
       price_per_1000l: 2000
     };
 
+    const kuchen: Ware = {
+      id: kuchenId,
+      name: 'Kuchen',
+      unit: 'Stück',
+      price_per_1000l: 3000
+    };
+
+    const nudel: Ware = {
+      id: nudelId,
+      name: 'Nudeln',
+      unit: 'Kilogramm',
+      price_per_1000l: 1500
+    };
+
+    const milch: Ware = {
+      id: milchId,
+      name: 'Milch',
+      unit: 'Liter',
+      density: 1.0,
+      price_per_1000l: 600
+    };
+
     this.waren.set(weizenId, weizen);
     this.waren.set(mehlId, mehl);
     this.waren.set(brotId, brot);
+    this.waren.set(kuchenId, kuchen);
+    this.waren.set(nudelId, nudel);
+    this.waren.set(milchId, milch);
 
     const mehlProduktionId = uuidv4();
     const brotProduktionId = uuidv4();
+    const kuchenProduktionId = uuidv4();
+    const nudelProduktionId = uuidv4();
 
     const mehlProduktion: Produktion = {
       id: mehlProduktionId,
@@ -65,6 +95,28 @@ class InMemoryDatabase {
       cycles_per_month: 80,
       fixed_costs_per_month: 1500,
       variable_costs_per_cycle: 15,
+      inputs: [],
+      outputs: []
+    };
+
+    const kuchenProduktion: Produktion = {
+      id: kuchenProduktionId,
+      name: 'Kuchen Produktion',
+      description: 'Mehl und Milch zu Kuchen verarbeiten',
+      cycles_per_month: 60,
+      fixed_costs_per_month: 1200,
+      variable_costs_per_cycle: 20,
+      inputs: [],
+      outputs: []
+    };
+
+    const nudelProduktion: Produktion = {
+      id: nudelProduktionId,
+      name: 'Nudel Produktion',
+      description: 'Mehl zu Nudeln verarbeiten',
+      cycles_per_month: 90,
+      fixed_costs_per_month: 800,
+      variable_costs_per_cycle: 12,
       inputs: [],
       outputs: []
     };
@@ -101,21 +153,74 @@ class InMemoryDatabase {
       good: brot
     };
 
+    const kuchenMehlInput: ProductionInput = {
+      id: uuidv4(),
+      production_id: kuchenProduktionId,
+      good_id: mehlId,
+      quantity_per_cycle: 30,
+      good: mehl
+    };
+
+    const kuchenMilchInput: ProductionInput = {
+      id: uuidv4(),
+      production_id: kuchenProduktionId,
+      good_id: milchId,
+      quantity_per_cycle: 20,
+      good: milch
+    };
+
+    const kuchenOutput: ProductionOutput = {
+      id: uuidv4(),
+      production_id: kuchenProduktionId,
+      good_id: kuchenId,
+      quantity_per_cycle: 25,
+      good: kuchen
+    };
+
+    const nudelInput: ProductionInput = {
+      id: uuidv4(),
+      production_id: nudelProduktionId,
+      good_id: mehlId,
+      quantity_per_cycle: 40,
+      good: mehl
+    };
+
+    const nudelOutput: ProductionOutput = {
+      id: uuidv4(),
+      production_id: nudelProduktionId,
+      good_id: nudelId,
+      quantity_per_cycle: 35,
+      good: nudel
+    };
+
     this.productionInputs.set(mehlInput.id, mehlInput);
     this.productionOutputs.set(mehlOutput.id, mehlOutput);
     this.productionInputs.set(brotInput.id, brotInput);
     this.productionOutputs.set(brotOutput.id, brotOutput);
+    this.productionInputs.set(kuchenMehlInput.id, kuchenMehlInput);
+    this.productionInputs.set(kuchenMilchInput.id, kuchenMilchInput);
+    this.productionOutputs.set(kuchenOutput.id, kuchenOutput);
+    this.productionInputs.set(nudelInput.id, nudelInput);
+    this.productionOutputs.set(nudelOutput.id, nudelOutput);
 
     mehlProduktion.inputs = [mehlInput];
     mehlProduktion.outputs = [mehlOutput];
     brotProduktion.inputs = [brotInput];
     brotProduktion.outputs = [brotOutput];
+    kuchenProduktion.inputs = [kuchenMehlInput, kuchenMilchInput];
+    kuchenProduktion.outputs = [kuchenOutput];
+    nudelProduktion.inputs = [nudelInput];
+    nudelProduktion.outputs = [nudelOutput];
 
     this.produktionen.set(mehlProduktionId, mehlProduktion);
     this.produktionen.set(brotProduktionId, brotProduktion);
+    this.produktionen.set(kuchenProduktionId, kuchenProduktion);
+    this.produktionen.set(nudelProduktionId, nudelProduktion);
 
     const muehleId = uuidv4();
     const baeckereiId = uuidv4();
+    const konditoreiId = uuidv4();
+    const nudelFabrikId = uuidv4();
 
     const muehle: Gebaeude = {
       id: muehleId,
@@ -131,8 +236,24 @@ class InMemoryDatabase {
       productions: [brotProduktion]
     };
 
+    const konditorei: Gebaeude = {
+      id: konditoreiId,
+      name: 'Konditorei',
+      building_costs_per_month: 1000,
+      productions: [kuchenProduktion]
+    };
+
+    const nudelFabrik: Gebaeude = {
+      id: nudelFabrikId,
+      name: 'Nudel-Fabrik',
+      building_costs_per_month: 600,
+      productions: [nudelProduktion]
+    };
+
     this.gebaeude.set(muehleId, muehle);
     this.gebaeude.set(baeckereiId, baeckerei);
+    this.gebaeude.set(konditoreiId, konditorei);
+    this.gebaeude.set(nudelFabrikId, nudelFabrik);
   }
 
   getAllWaren(): Ware[] {
