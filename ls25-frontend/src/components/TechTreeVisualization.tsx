@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { produktionenApi, warenApi, Produktion, Ware } from '@/lib/api';
+import { produktionenApi, warenApi, calculationApi, Produktion, Ware } from '@/lib/api';
 
 interface Node {
   id: string;
@@ -28,6 +28,9 @@ export function TechTreeVisualization() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [showCapacity, setShowCapacity] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [capacityData, setCapacityData] = useState<Map<string, any>>(new Map());
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -39,6 +42,12 @@ export function TechTreeVisualization() {
       generateGraph();
     }
   }, [produktionen, waren]);
+
+  useEffect(() => {
+    if (showCapacity && produktionen.length > 0) {
+      loadCapacityData();
+    }
+  }, [showCapacity, produktionen]);
 
   const loadData = async () => {
     try {
@@ -53,38 +62,124 @@ export function TechTreeVisualization() {
     }
   };
 
+  const loadCapacityData = async () => {
+    try {
+      const capacityMap = new Map();
+      for (const produktion of produktionen) {
+        const capacity = await calculationApi.getCapacityAnalysis(produktion.id);
+        capacityMap.set(produktion.id, capacity);
+      }
+      setCapacityData(capacityMap);
+    } catch (error) {
+      console.error('Error loading capacity data:', error);
+    }
+  };
+
   const generateGraph = () => {
     const newNodes: Node[] = [];
     const newEdges: Edge[] = [];
-    const nodePositions = new Map<string, { x: number; y: number }>();
-
-    waren.forEach((ware, index) => {
-      const x = 100 + (index % 5) * 200;
-      const y = 100 + Math.floor(index / 5) * 150;
-      nodePositions.set(`good-${ware.id}`, { x, y });
-      newNodes.push({
-        id: `good-${ware.id}`,
-        type: 'good',
-        name: ware.name,
-        x,
-        y,
-        data: ware
+    
+    const dependencyMap = new Map<string, Set<string>>();
+    const reverseDependencyMap = new Map<string, Set<string>>();
+    
+    waren.forEach(ware => {
+      dependencyMap.set(ware.id, new Set());
+      reverseDependencyMap.set(ware.id, new Set());
+    });
+    
+    produktionen.forEach(produktion => {
+      produktion.inputs.forEach(input => {
+        produktion.outputs.forEach(output => {
+          dependencyMap.get(output.good_id)?.add(input.good_id);
+          reverseDependencyMap.get(input.good_id)?.add(output.good_id);
+        });
       });
     });
-
-    produktionen.forEach((produktion, index) => {
-      const x = 150 + (index % 4) * 250;
-      const y = 200 + Math.floor(index / 4) * 200;
-      nodePositions.set(`production-${produktion.id}`, { x, y });
+    
+    const levels = new Map<string, number>();
+    const visited = new Set<string>();
+    
+    const calculateLevel = (goodId: string): number => {
+      if (visited.has(goodId)) return levels.get(goodId) || 0;
+      visited.add(goodId);
+      
+      const dependencies = dependencyMap.get(goodId);
+      if (!dependencies || dependencies.size === 0) {
+        levels.set(goodId, 0);
+        return 0;
+      }
+      
+      let maxLevel = 0;
+      dependencies.forEach(depId => {
+        maxLevel = Math.max(maxLevel, calculateLevel(depId) + 1);
+      });
+      
+      levels.set(goodId, maxLevel);
+      return maxLevel;
+    };
+    
+    waren.forEach(ware => calculateLevel(ware.id));
+    
+    const levelGroups = new Map<number, string[]>();
+    levels.forEach((level, goodId) => {
+      if (!levelGroups.has(level)) {
+        levelGroups.set(level, []);
+      }
+      levelGroups.get(level)?.push(goodId);
+    });
+    
+    const levelHeight = 120;
+    const nodeSpacing = 180;
+    const startY = 80;
+    
+    levelGroups.forEach((goodIds, level) => {
+      const y = startY + level * levelHeight;
+      const totalWidth = (goodIds.length - 1) * nodeSpacing;
+      const startX = (1200 - totalWidth) / 2;
+      
+      goodIds.forEach((goodId, index) => {
+        const ware = waren.find(w => w.id === goodId);
+        if (ware) {
+          const x = startX + index * nodeSpacing;
+          newNodes.push({
+            id: `good-${ware.id}`,
+            type: 'good',
+            name: ware.name,
+            x,
+            y,
+            data: ware
+          });
+        }
+      });
+    });
+    
+    produktionen.forEach(produktion => {
+      const inputLevels = produktion.inputs.map(input => levels.get(input.good_id) || 0);
+      const outputLevels = produktion.outputs.map(output => levels.get(output.good_id) || 0);
+      
+      const avgInputLevel = inputLevels.reduce((sum, level) => sum + level, 0) / inputLevels.length;
+      const avgOutputLevel = outputLevels.reduce((sum, level) => sum + level, 0) / outputLevels.length;
+      const productionLevel = (avgInputLevel + avgOutputLevel) / 2;
+      
+      const inputNodes = produktion.inputs.map(input => 
+        newNodes.find(n => n.id === `good-${input.good_id}`)
+      ).filter(Boolean);
+      const outputNodes = produktion.outputs.map(output => 
+        newNodes.find(n => n.id === `good-${output.good_id}`)
+      ).filter(Boolean);
+      
+      const allRelatedNodes = [...inputNodes, ...outputNodes];
+      const avgX = allRelatedNodes.reduce((sum, node) => sum + (node?.x || 0), 0) / allRelatedNodes.length;
+      
       newNodes.push({
         id: `production-${produktion.id}`,
         type: 'production',
         name: produktion.name,
-        x,
-        y,
+        x: avgX,
+        y: startY + productionLevel * levelHeight,
         data: produktion
       });
-
+      
       produktion.inputs.forEach(input => {
         newEdges.push({
           from: `good-${input.good_id}`,
@@ -112,33 +207,86 @@ export function TechTreeVisualization() {
     setSelectedNode(node);
   };
 
+  const handleNodeMouseEnter = (node: Node, event: React.MouseEvent) => {
+    setHoveredNode(node);
+    setMousePosition({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleNodeMouseLeave = () => {
+    setHoveredNode(null);
+  };
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    if (hoveredNode) {
+      setMousePosition({ x: event.clientX, y: event.clientY });
+    }
+  };
+
   const getNodeColor = (node: Node) => {
     if (node.type === 'good') {
       return '#3b82f6'; // Blue for goods
     } else {
+      if (showCapacity && capacityData.has(node.data?.id)) {
+        const capacity = capacityData.get(node.data.id);
+        const utilizationPercent = Math.min(100, (capacity.inputs_per_month.length * 20)); // Simple utilization calculation
+        if (utilizationPercent > 80) return '#ef4444'; // Red for high utilization
+        if (utilizationPercent > 60) return '#f59e0b'; // Orange for medium utilization
+        return '#10b981'; // Green for low utilization
+      }
       return '#10b981'; // Green for productions
     }
   };
 
   const renderTooltip = (node: Node) => {
+    if (!hoveredNode || hoveredNode.id !== node.id) return null;
+
     if (node.type === 'good') {
       const ware = node.data as Ware;
       return (
-        <div className="absolute bg-white border rounded shadow-lg p-2 text-sm z-10">
-          <div className="font-semibold">{ware.name}</div>
-          <div>Einheit: {ware.unit}</div>
-          <div>Preis: €{ware.price_per_1000l}/1000L</div>
-          {ware.density && <div>Dichte: {ware.density}</div>}
+        <div 
+          className="fixed bg-white border rounded shadow-lg p-3 text-sm z-50 pointer-events-none"
+          style={{ 
+            left: mousePosition.x + 10, 
+            top: mousePosition.y - 10,
+            maxWidth: '250px'
+          }}
+        >
+          <div className="font-semibold text-blue-600">{ware.name}</div>
+          <div className="mt-1 space-y-1">
+            <div>Einheit: {ware.unit}</div>
+            <div>Preis: €{ware.price_per_1000l.toFixed(2)}/1000L</div>
+            {ware.density && <div>Dichte: {ware.density}</div>}
+          </div>
         </div>
       );
     } else {
       const produktion = node.data as Produktion;
+      const capacity = capacityData.get(produktion.id);
       return (
-        <div className="absolute bg-white border rounded shadow-lg p-2 text-sm z-10">
-          <div className="font-semibold">{produktion.name}</div>
-          <div>Zyklen/Monat: {produktion.cycles_per_month}</div>
-          <div>Fixkosten: €{produktion.fixed_costs_per_month}/Monat</div>
-          <div>Variable Kosten: €{produktion.variable_costs_per_cycle}/Zyklus</div>
+        <div 
+          className="fixed bg-white border rounded shadow-lg p-3 text-sm z-50 pointer-events-none"
+          style={{ 
+            left: mousePosition.x + 10, 
+            top: mousePosition.y - 10,
+            maxWidth: '300px'
+          }}
+        >
+          <div className="font-semibold text-green-600">{produktion.name}</div>
+          <div className="mt-1 space-y-1">
+            <div>Zyklen/Monat: {produktion.cycles_per_month}</div>
+            <div>Fixkosten: €{produktion.fixed_costs_per_month}/Monat</div>
+            <div>Variable Kosten: €{produktion.variable_costs_per_cycle}/Zyklus</div>
+            {showCapacity && capacity && (
+              <div className="mt-2 pt-2 border-t">
+                <div className="font-medium">Kapazitätsanalyse:</div>
+                {capacity.inputs_per_month.map((input: any, idx: number) => (
+                  <div key={idx} className="text-xs">
+                    {input.good_name}: {input.quantity.toFixed(1)} {input.unit}/Monat
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       );
     }
@@ -168,6 +316,7 @@ export function TechTreeVisualization() {
             height="600"
             viewBox="0 0 1200 600"
             className="border rounded"
+            onMouseMove={handleMouseMove}
           >
             {/* Render edges */}
             {edges.map((edge, index) => {
@@ -175,23 +324,29 @@ export function TechTreeVisualization() {
               const toNode = nodes.find(n => n.id === edge.to);
               if (!fromNode || !toNode) return null;
 
+              const fromY = fromNode.type === 'good' ? fromNode.y + 20 : fromNode.y + 15;
+              const toY = toNode.type === 'good' ? toNode.y - 20 : toNode.y - 15;
+              
+              const midY = (fromY + toY) / 2;
+              const pathData = `M ${fromNode.x} ${fromY} Q ${fromNode.x} ${midY} ${(fromNode.x + toNode.x) / 2} ${midY} Q ${toNode.x} ${midY} ${toNode.x} ${toY}`;
+
               return (
                 <g key={index}>
-                  <line
-                    x1={fromNode.x}
-                    y1={fromNode.y}
-                    x2={toNode.x}
-                    y2={toNode.y}
-                    stroke="#6b7280"
-                    strokeWidth="2"
+                  <path
+                    d={pathData}
+                    stroke="#4b5563"
+                    strokeWidth="3"
+                    fill="none"
                     markerEnd="url(#arrowhead)"
+                    opacity="0.8"
                   />
                   <text
                     x={(fromNode.x + toNode.x) / 2}
-                    y={(fromNode.y + toNode.y) / 2 - 5}
+                    y={midY - 8}
                     textAnchor="middle"
                     fontSize="10"
                     fill="#374151"
+                    className="font-medium"
                   >
                     {edge.label}
                   </text>
@@ -201,38 +356,60 @@ export function TechTreeVisualization() {
 
             {/* Render nodes */}
             {nodes.map((node) => (
-              <g key={node.id} onClick={() => handleNodeClick(node)} style={{ cursor: 'pointer' }}>
+              <g 
+                key={node.id} 
+                onClick={() => handleNodeClick(node)} 
+                onMouseEnter={(e) => handleNodeMouseEnter(node, e as any)}
+                onMouseLeave={handleNodeMouseLeave}
+                style={{ cursor: 'pointer' }}
+              >
                 {node.type === 'good' ? (
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r="20"
+                  <rect
+                    x={node.x - 35}
+                    y={node.y - 20}
+                    width="70"
+                    height="40"
                     fill={getNodeColor(node)}
                     stroke="#1f2937"
                     strokeWidth="2"
+                    rx="8"
+                    opacity={hoveredNode?.id === node.id ? 0.9 : 1}
                   />
                 ) : (
                   <rect
-                    x={node.x - 25}
-                    y={node.y - 15}
-                    width="50"
-                    height="30"
+                    x={node.x - 40}
+                    y={node.y - 20}
+                    width="80"
+                    height="40"
                     fill={getNodeColor(node)}
                     stroke="#1f2937"
                     strokeWidth="2"
-                    rx="5"
+                    rx="8"
+                    opacity={hoveredNode?.id === node.id ? 0.9 : 1}
                   />
                 )}
                 <text
                   x={node.x}
-                  y={node.y + 35}
+                  y={node.y + 4}
                   textAnchor="middle"
-                  fontSize="12"
-                  fill="#1f2937"
-                  className="font-medium"
+                  fontSize="11"
+                  fill="white"
+                  className="font-semibold"
                 >
-                  {node.name.length > 10 ? node.name.substring(0, 10) + '...' : node.name}
+                  {node.name.length > 8 ? node.name.substring(0, 8) + '...' : node.name}
                 </text>
+                {showCapacity && node.type === 'production' && capacityData.has(node.data?.id) && (
+                  <text
+                    x={node.x}
+                    y={node.y + 35}
+                    textAnchor="middle"
+                    fontSize="9"
+                    fill="#6b7280"
+                    className="font-medium"
+                  >
+                    Auslastung
+                  </text>
+                )}
               </g>
             ))}
 
@@ -240,19 +417,22 @@ export function TechTreeVisualization() {
             <defs>
               <marker
                 id="arrowhead"
-                markerWidth="10"
-                markerHeight="7"
-                refX="9"
-                refY="3.5"
+                markerWidth="12"
+                markerHeight="8"
+                refX="11"
+                refY="4"
                 orient="auto"
               >
                 <polygon
-                  points="0 0, 10 3.5, 0 7"
-                  fill="#6b7280"
+                  points="0 0, 12 4, 0 8"
+                  fill="#4b5563"
                 />
               </marker>
             </defs>
           </svg>
+
+          {/* Render tooltip */}
+          {hoveredNode && renderTooltip(hoveredNode)}
 
           {/* Node details panel */}
           {selectedNode && (
@@ -292,6 +472,18 @@ export function TechTreeVisualization() {
             <div className="w-4 h-4 bg-green-500 rounded"></div>
             <span>Produktionen</span>
           </div>
+          {showCapacity && (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-red-500 rounded"></div>
+                <span>Hohe Auslastung</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-orange-500 rounded"></div>
+                <span>Mittlere Auslastung</span>
+              </div>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>
